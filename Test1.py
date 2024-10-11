@@ -13,7 +13,12 @@ NUM = 100000
 
 
 
-
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+LIGHT_BLUE = "\033[1;34m"  # Hellblau
+RESET = "\033[0m"
 
 
 
@@ -175,8 +180,8 @@ class State:
   def changeElec(self, elec):
     self.elVotes = elec
 
-  def getChance(self, candidate):
-    r = self.forecast.calcChance(NUM, STDError, candidate, False)
+  def getChance(self, n, error, candidate):
+    r = self.forecast.calcChance(n, error, candidate, False)
     return r
 
   
@@ -195,6 +200,13 @@ class Model:
   def getElVotes(self):
     return sum(state.elVotes for state in self.states)
 
+  def getStateIndex(self, name):
+    state = [state for state in self.states if state.name == name]
+    if(len(state) == 0):
+       print("State ", name, " not found!")
+       return
+    return self.states.index(state[0])
+    
   def addPollByName(self, poll, name):
      state = [state for state in self.states if state.name == name]
      if(len(state) == 0):
@@ -237,31 +249,133 @@ class Model:
       stat.append(b)
     print("Die Wahl wurde ", n, " mal simuliert: \nHarris hat", round(100 * (1 - count/n), 2), "% der Simulationen gewonnen. \nTrump hat ", round(100*count/n, 2), "% der Simulationen gewonnen.")
 
+  def allStates(self, n, error, advanced, sort):
+    if (sort == False):
+      print("{:<20} {:<10} {:<10} {:<10} {:<10} {:<10} {:<10}".format(
+          "Name", "EV", "TrumpChance", "HarrisChance", "TrumpPoll", "HarrisPoll", "Difference"))
+      for state in self.states:
+        p = state.forecast.calcChance(n, error, Trump, advanced)
+        q = state.forecast.result[0]
+
+        # Bestimmen Sie die Farbe für den letzten Eintrag
+        last_entry = 200 * (q - 0.5)
+        if last_entry > 0:
+          last_entry_str = f"{RED}{last_entry:.2f}{RESET}"
+        elif (last_entry < 0):
+          last_entry_str = f"{LIGHT_BLUE}{-last_entry:.2f}{RESET}"
+
+        else:
+          last_entry_str = f"{YELLOW}{last_entry:.2f}{RESET}"
+
+        print("{:<20} {:<10} {:<10.2f} {:<10.2f} {:<10.2f} {:<10.2f} {}".format(
+            state.name,
+            state.elVotes,
+            100 * p,
+            100 * (1 - p),
+            100 * q,
+            100 * (1 - q),
+            last_entry_str
+        ))
+    else:
+      polls = []
+      for state in self.states:
+        polls.append(state.forecast.result[0])
+      sorted = []
+      differences = [abs(poll - 0.5) for poll in polls]
+      for i in range(len(self.states)):
+        i = differences.index(min(differences))
+        sorted.append(i)
+        differences[i] = 10
+      print("{:<20} {:<10} {:<10} {:<10} {:<10} {:<10} {:<10}".format(
+          "Name", "EV", "TrumpChance", "HarrisChance", "TrumpPoll", "HarrisPoll", "Difference"))
+      for i in range(len(self.states)):
+        state = self.states[sorted[i]]
+        p = state.forecast.calcChance(n, error, Trump, advanced)
+        q = state.forecast.result[0]
+
+        # Bestimmen Sie die Farbe für den letzten Eintrag
+        last_entry = 200 * (q - 0.5)
+        if last_entry > 0:
+          last_entry_str = f"{RED}{last_entry:.2f}{RESET}"
+        elif (last_entry < 0):
+          last_entry_str = f"{LIGHT_BLUE}{-last_entry:.2f}{RESET}"
+
+        else:
+          last_entry_str = f"{YELLOW}{last_entry:.2f}{RESET}"
+
+        print("{:<20} {:<10} {:<10.2f} {:<10.2f} {:<10.2f} {:<10.2f} {}".format(
+            state.name,
+            state.elVotes,
+            100 * p,
+            100 * (1 - p),
+            100 * q,
+            100 * (1 - q),
+            last_entry_str
+        ))
+
+
   
 
 class UI:
-  def __init__(self, model):
-    self.model = model
+    def __init__(self, model):
+        self.model = model
 
-  def main(self):
-    while(True):
-      info = input("Enter your order:")
-      
-      if(info.startswith("addPoll")):
-        new = info.strip().split()
-        name = new[1]
-        trump = float(new[2])
-        harris = float(new[3])
-        days = int(new[4])
-        self.model.addPollByName(Poll([trump, harris], cand, 1000, days), name)
+    def main(self):
+        while True:
+            try:
+                info = input("Enter your order:")
+                
+                if info.startswith("addPoll"):
+                    new = info.strip().split()
+                    if len(new) != 5:
+                        print("Invalid input. Usage: addPoll <name> <trump> <harris> <days>")
+                        continue
+                    name = new[1]
+                    trump = float(new[2])
+                    harris = float(new[3])
+                    days = int(new[4])
+                    self.model.addPollByName(Poll([trump, harris], cand, 1000, days), name)
 
-      elif(info.startswith("Fast")):
-        self.model.TrumpVsHarris(10000, STDError, False)
+                elif info.startswith("Fast"):
+                    new = info.strip().split()
+                    if len(new) != 2:
+                        print("Invalid input. Usage: Fast <n>")
+                        continue
+                    n = int(new[1])
+                    self.model.TrumpVsHarris(n, STDError, False)
 
+                elif info.startswith("State"):
+                    new = info.strip().split()
+                    if len(new) != 2:
+                        print("Invalid input. Usage: State <name>")
+                        continue
+                    name = new[1]
+                    ind = self.model.getStateIndex(name)
+                    self.model.states[ind].forecast.printInfo(Trump)
 
+                elif info.startswith("AllStates"):
+                  new = info.strip().split()
+                  if len(new) != 2:
+                    self.model.allStates(100000, STDError, True, False)
+                    continue
+                  sort = new[1].lower() == "sort"
+                  self.model.allStates(100000, STDError, True, sort)
 
+                elif info.startswith("Exit"):
+                    print("Exiting program.")
+                    break
 
-  
+                else:
+                    print("Unknown command. Please try again.")
+
+            except ValueError as e:
+                print(f"Invalid input: {e}")
+            except IndexError as e:
+                print(f"Error: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+
+# Beispiel für die Verwendung der neuen Exit-Funktion
 Rep = Party("Republican")
 Dem = Party("Democratic")
 
